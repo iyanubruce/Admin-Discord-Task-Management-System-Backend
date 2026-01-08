@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import config from "./env";
 import Category from "../database/models/category";
+import logger from "../utils/logger";
 
 async function initializeSpecialCategories() {
   try {
@@ -38,25 +39,30 @@ if (!mongoUri) {
   process.exit(1);
 }
 
-mongoose
-  .connect(mongoUri, {
-    // MongoDB Enterprise connection options
-    serverSelectionTimeoutMS:
-      config.application.database.serverSelectionTimeoutMS,
-    socketTimeoutMS: config.application.database.socketTimeoutMS,
-    maxPoolSize: config.application.database.maxPoolSize,
-    minPoolSize: config.application.database.minPoolSize,
-    retryWrites: true,
-    w: "majority",
-    // For Enterprise clusters with replica sets
-    readPreference: "primary",
-    readConcern: { level: "majority" },
-  })
-  .then(() => {
-    console.log("Connected to MongoDB Enterprise");
+mongoose.set("strictQuery", true); // This enables strict query mode globally
+
+export async function connectDB() {
+  try {
+    await mongoose.connect(mongoUri, {
+      // MongoDB Enterprise connection options
+      serverSelectionTimeoutMS:
+        config.application.database.serverSelectionTimeoutMS,
+      socketTimeoutMS: config.application.database.socketTimeoutMS,
+      maxPoolSize: config.application.database.maxPoolSize,
+      minPoolSize: config.application.database.minPoolSize,
+      retryWrites: true,
+      w: "majority",
+      // For Enterprise clusters with replica sets
+      readPreference: "primary",
+      readConcern: { level: "majority" },
+    });
+    logger.info("✅ Connected to DB");
     // Initialize special categories after connection is established
-    initializeSpecialCategories();
-  })
-  .catch((err) => console.error("MongoDB connection error:", err));
+    await initializeSpecialCategories();
+  } catch (err) {
+    logger.error("❌ MongoDB connection error:", err);
+    throw err;
+  }
+}
 
 export default mongoose;

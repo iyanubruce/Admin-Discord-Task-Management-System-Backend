@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 
-export function customErrorMiddleware(
+export default function customErrorMiddleware(
   err: unknown,
   req: Request,
   res: Response,
