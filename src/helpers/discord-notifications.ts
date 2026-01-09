@@ -103,10 +103,19 @@ export async function sendDiscordNotification(
       return;
     }
 
-    await axios.post(webhookUrl as string, {
-      content: `<@${user.discordId}>`,
-      embeds: [embed],
-    });
+    await axios.post(
+      webhookUrl as string,
+      {
+        content: `<@${user.discordId}>`,
+        embeds: [embed],
+      },
+      {
+        timeout: 5000, // 5 second timeout
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
 
     // Only update lastNotified for reminder type
     if (type === "reminder") {

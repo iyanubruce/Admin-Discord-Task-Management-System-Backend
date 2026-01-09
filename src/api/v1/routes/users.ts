@@ -1,5 +1,7 @@
 import { Router, Request, Response } from "express";
 import User from "../../../database/models/user";
+import { validate } from "../../middlewares/validate";
+import { createUserSchema, deleteUserSchema } from "../../../validations/users";
 
 const router = Router();
 
@@ -13,7 +15,7 @@ router.get("/", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/", async (req: Request, res: Response) => {
+router.post("/", validate(createUserSchema), async (req: Request, res: Response) => {
   try {
     const { name, discordId } = req.body;
 
@@ -39,7 +41,7 @@ router.post("/", async (req: Request, res: Response) => {
   }
 });
 
-router.delete("/:id", async (req: Request, res: Response) => {
+router.delete("/:id", validate(deleteUserSchema), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     await User.findByIdAndDelete(id);
