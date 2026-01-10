@@ -8,7 +8,7 @@ const DISCORD_WEBHOOKS = {
   DELETE: env.discord.webhooks.delete,
 };
 
-type NotificationType =
+export type NotificationType =
   | "reminder"
   | "complete"
   | "delete"
