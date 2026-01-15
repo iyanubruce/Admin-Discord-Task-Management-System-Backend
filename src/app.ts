@@ -4,7 +4,11 @@ import morgan from "morgan";
 import compression from "compression";
 import customErrorMiddleware from "./api/middlewares/custom-error-middleware";
 import v1Router from "./api/v1/routes";
-import logger from "./utils/logger";
+import Redis from "ioredis";
+import env from "./config/env";
+import { init as initRedis } from "./utils/redis";
+
+initRedis(new Redis(env.redis));
 
 const app: Application = express();
 

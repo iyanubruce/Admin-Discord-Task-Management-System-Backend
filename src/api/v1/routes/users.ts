@@ -1,9 +1,11 @@
 import { Router } from "express";
+import authenticate from "../../middlewares/user-auth";
 import { validate } from "../../middlewares/validate";
 import { createUserSchema, deleteUserSchema } from "../../../validations/users";
 import * as userHandlers from "../../request-handlers/users";
 
 const router = Router();
+router.use(authenticate());
 
 router.get("/", userHandlers.getUsers);
 

@@ -1,6 +1,7 @@
 import axios from "axios";
 import env from "../config/env";
 import Task from "../database/models/task";
+import logger from "../utils/logger";
 
 const DISCORD_WEBHOOKS = {
   REMINDER: env.discord.webhooks.reminder,
@@ -8,17 +9,18 @@ const DISCORD_WEBHOOKS = {
   DELETE: env.discord.webhooks.delete,
 };
 
-export type NotificationType =
-  | "reminder"
-  | "complete"
-  | "delete"
-  | "permanent"
-  | "created";
+export enum NotificationType {
+  Reminder = "reminder",
+  Complete = "complete",
+  Delete = "delete",
+  Permanent = "permanent",
+  Created = "created",
+}
 
 export async function sendDiscordNotification(
   task: any,
   user: any,
-  type: NotificationType = "reminder"
+  type: NotificationType = NotificationType.Reminder
 ) {
   try {
     const priorityColors = {
@@ -28,19 +30,19 @@ export async function sendDiscordNotification(
     };
 
     const titles: Record<NotificationType, string> = {
-      reminder: "📋 Task Reminder",
-      complete: "✅ Task Completed",
-      delete: "🗑️ Task Deleted",
-      permanent: "⚠️ Task Permanently Deleted",
-      created: "🆕 New Task Created",
+      [NotificationType.Reminder]: "📋 Task Reminder",
+      [NotificationType.Complete]: "✅ Task Completed",
+      [NotificationType.Delete]: "🗑️ Task Deleted",
+      [NotificationType.Permanent]: "⚠️ Task Permanently Deleted",
+      [NotificationType.Created]: "🆕 New Task Created",
     };
 
     const descriptions: Record<NotificationType, string> = {
-      reminder: `Hey <@${user.discordId}>, you have a task due!`,
-      complete: `<@${user.discordId}> has completed a task!`,
-      delete: `<@${user.discordId}>'s task has been moved to trash.`,
-      permanent: `<@${user.discordId}>'s task has been permanently deleted.`,
-      created: `A new task has been assigned to <@${user.discordId}>!`,
+      [NotificationType.Reminder]: `Hey <@${user.discordId}>, you have a task due!`,
+      [NotificationType.Complete]: `<@${user.discordId}> has completed a task!`,
+      [NotificationType.Delete]: `<@${user.discordId}>'s task has been moved to trash.`,
+      [NotificationType.Permanent]: `<@${user.discordId}>'s task has been permanently deleted.`,
+      [NotificationType.Created]: `A new task has been assigned to <@${user.discordId}>!`,
     };
 
     const priorityColor = (priorityColors as Record<string, number>)[
@@ -48,14 +50,16 @@ export async function sendDiscordNotification(
     ] as number | undefined;
 
     const embed = {
-      title: titles[type] || titles["reminder"],
-      description: descriptions[type] || descriptions["reminder"],
+      title: titles[type] || titles[NotificationType.Reminder],
+      description:
+        descriptions[type] || descriptions[NotificationType.Reminder],
       color:
-        type === "complete"
+        type === NotificationType.Complete
           ? 0x00ff00
-          : type === "delete" || type === "permanent"
+          : type === NotificationType.Delete ||
+            type === NotificationType.Permanent
           ? 0xff0000
-          : type === "created"
+          : type === NotificationType.Created
           ? 0x3498db
           : priorityColor ?? 0x3498db,
       fields: [
@@ -99,7 +103,7 @@ export async function sendDiscordNotification(
     }
 
     if (!webhookUrl) {
-      console.warn(`No webhook configured for notification type: ${type}`);
+      logger.warn(`No webhook configured for notification type: ${type}`);
       return;
     }
 
@@ -110,7 +114,6 @@ export async function sendDiscordNotification(
         embeds: [embed],
       },
       {
-        timeout: 5000, // 5 second timeout
         headers: {
           "Content-Type": "application/json",
         },
@@ -121,10 +124,9 @@ export async function sendDiscordNotification(
     if (type === "reminder") {
       await Task.findByIdAndUpdate(task._id, { lastNotified: new Date() });
     }
-
-    console.log(`${type} notification sent for task: ${task.taskName}`);
+    logger.info(`${type} notification sent for task: ${task.taskName}`);
   } catch (error) {
-    console.error(`Error sending Discord ${type} notification:`, error);
+    logger.error(`Error sending Discord ${type} notification:`, error);
   }
 }
 
@@ -143,11 +145,15 @@ export async function checkAndSendNotifications() {
     for (const task of tasks) {
       const shouldNotify = await shouldSendNotification(task, istNow);
       if (shouldNotify) {
-        await sendDiscordNotification(task, task.assignedUser, "reminder");
+        await sendDiscordNotification(
+          task,
+          task.assignedUser,
+          NotificationType.Reminder
+        );
       }
     }
   } catch (error) {
-    console.error("Error checking notifications:", error);
+    logger.error("Error checking notifications:", error);
   }
 }
 

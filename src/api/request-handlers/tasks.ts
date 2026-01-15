@@ -41,6 +41,8 @@ export const createTask: RequestHandler = async (req, res, next) => {
 
 export const updateTask: RequestHandler = async (req, res, next) => {
   try {
+    console.log("reached reached");
+
     const { id } = req.params;
     const {
       taskName,
@@ -50,6 +52,7 @@ export const updateTask: RequestHandler = async (req, res, next) => {
       category,
       repeatInterval,
     } = req.body;
+
     const task = await routingController.updateTask(id, {
       taskName,
       dueDate,
@@ -91,8 +94,8 @@ export const completeTask: RequestHandler = async (req, res, next) => {
 export const updateTaskCategory: RequestHandler = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { categoryId } = req.body;
-    const task = await routingController.updateTaskCategory(id, categoryId);
+    const { category } = req.body;
+    const task = await routingController.updateTaskCategory(id, category);
     res
       .status(200)
       .json(

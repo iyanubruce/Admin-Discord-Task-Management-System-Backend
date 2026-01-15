@@ -9,7 +9,8 @@ import * as taskRepository from "../database/repositories/task";
 import * as categoryRepository from "../database/repositories/category";
 import * as userRepository from "../database/repositories/user";
 import { Types } from "mongoose";
-
+import logger from "../utils/logger";
+import { notificationQueue } from "../queues/notification-queue";
 export const getTasks = async (): Promise<TaskAttributes[]> => {
   const tasks = await taskRepository.findTasks({
     populate: ["category", "assignedUser"],
@@ -50,11 +51,11 @@ export const createTask = async (data: {
 
   // Send Discord notification asynchronously (non-blocking)
   if (populatedTask) {
-    sendDiscordNotification(
-      populatedTask,
-      populatedTask.assignedUser,
-      "created"
-    ).catch((err) => console.error("Discord notification failed:", err));
+    notificationQueue.add({
+      task: populatedTask,
+      user: populatedTask.assignedUser,
+      type: NotificationType.Created,
+    });
   }
 
   return populatedTask || task;
@@ -62,14 +63,14 @@ export const createTask = async (data: {
 
 export const updateTask = async (
   taskId: string,
-  data: {
+  data: Partial<{
     taskName: string;
     dueDate: Date;
     priority: "Easy" | "Medium" | "Hard";
     assignedUser: string;
     category: string;
-    repeatInterval?: string;
-  }
+    repeatInterval?: "none" | "daily" | "weekly" | "monthly";
+  }>
 ): Promise<TaskAttributes> => {
   const {
     taskName,
@@ -80,58 +81,40 @@ export const updateTask = async (
     repeatInterval,
   } = data;
 
-  // Validate required fields
-  if (!taskName || !dueDate || !priority || !assignedUser || !category) {
-    throw new BadRequestError("Missing required fields");
-  }
-
   // Check if task exists
   const existingTask = await taskRepository.findTaskById(taskId);
   if (!existingTask) {
     throw new ResourceNotFoundError("Task not found");
   }
 
-  // Validate that user exists
-  const userExists = await userRepository.findUserById(assignedUser);
-  if (!userExists) {
-    throw new BadRequestError("Assigned user not found");
-  }
-
-  // Validate that category exists
-  const categoryExists = await categoryRepository.findCategoryById(category);
-  if (!categoryExists) {
-    throw new BadRequestError("Category not found");
-  }
-
-  // Validate priority value
-  if (!["Easy", "Medium", "Hard"].includes(priority)) {
-    throw new BadRequestError("Invalid priority value");
-  }
-
-  // Validate repeat interval if provided
-  if (
-    repeatInterval &&
-    !["none", "daily", "weekly", "monthly"].includes(repeatInterval)
-  ) {
-    throw new BadRequestError("Invalid repeat interval");
-  }
-
-  const task = await taskRepository.updateTask(
-    taskId,
-    {
-      taskName,
-      dueDate,
-      priority,
-      assignedUser: new Types.ObjectId(assignedUser),
-      category: new Types.ObjectId(category),
-      repeatInterval:
-        (repeatInterval as "none" | "daily" | "weekly" | "monthly") || "none",
-    },
-    {
-      runValidators: true,
-      populate: ["category", "assignedUser"],
+  if (assignedUser) {
+    const userExists = await userRepository.findUserById(assignedUser);
+    if (!userExists) {
+      throw new BadRequestError("Assigned user not found");
     }
-  );
+  }
+
+  if (category) {
+    const categoryExists = await categoryRepository.findCategoryById(category);
+    if (!categoryExists) {
+      throw new BadRequestError("Category not found");
+    }
+  }
+
+  const updateData: any = {};
+  if (taskName !== undefined) updateData.taskName = taskName;
+  if (dueDate !== undefined) updateData.dueDate = dueDate;
+  if (priority !== undefined) updateData.priority = priority;
+  if (assignedUser !== undefined)
+    updateData.assignedUser = new Types.ObjectId(assignedUser);
+  if (category !== undefined)
+    updateData.category = new Types.ObjectId(category);
+  if (repeatInterval !== undefined) updateData.repeatInterval = repeatInterval;
+
+  const task = await taskRepository.updateTask(taskId, updateData, {
+    runValidators: true,
+    populate: ["category", "assignedUser"],
+  });
 
   if (!task) {
     throw new ResourceNotFoundError("Task not found");
@@ -167,10 +150,11 @@ export const deleteTask = async (
   if (categoryName === "Deleted Tasks") {
     await taskRepository.deleteTask(taskId);
 
-    // Send permanent delete notification (non-blocking)
-    sendDiscordNotification(task, task.assignedUser, "permanent").catch((err) =>
-      console.error("Discord notification failed:", err)
-    );
+    notificationQueue.add({
+      task,
+      user: task.assignedUser,
+      type: NotificationType.Permanent,
+    });
 
     return { message: "Task permanently deleted" };
   } else if (deletedCategory) {
@@ -182,10 +166,11 @@ export const deleteTask = async (
     // Ensure category is populated for notification
     await task.populate("category");
 
-    // Send delete notification (non-blocking)
-    sendDiscordNotification(task, task.assignedUser, "delete").catch((err) =>
-      console.error("Discord notification failed:", err)
-    );
+    notificationQueue.add({
+      task,
+      user: task.assignedUser,
+      type: NotificationType.Delete,
+    });
 
     return { message: "Task moved to deleted" };
   } else {
@@ -221,9 +206,11 @@ export const completeTask = async (taskId: string): Promise<TaskAttributes> => {
   await task.populate("category");
 
   // Send completion notification (non-blocking)
-  sendDiscordNotification(task, task.assignedUser, "complete").catch((err) =>
-    console.error("Discord notification failed:", err)
-  );
+  notificationQueue.add({
+    task,
+    user: task.assignedUser,
+    type: NotificationType.Complete,
+  });
 
   return task;
 };
@@ -233,13 +220,14 @@ export const updateTaskCategory = async (
   categoryId: string
 ): Promise<TaskAttributes> => {
   // Find the target category to check if it's special
-  const targetCategory = await categoryRepository.findCategoryById(categoryId);
-
+  const targetCategory = await categoryRepository.findCategoryById(
+    new Types.ObjectId(categoryId)
+  );
+  console.log("Target Category:", targetCategory);
   if (!targetCategory) {
     throw new ResourceNotFoundError("Category not found");
   }
 
-  // Determine the new status based on the category
   let newStatus: "active" | "completed" | "deleted" = "active";
   if (targetCategory.name === "Completed Tasks") {
     newStatus = "completed";
@@ -268,7 +256,7 @@ export const updateTaskCategory = async (
 
 export const testNotification = async (
   taskId: string,
-  type: string = "reminder"
+  type: NotificationType = NotificationType.Reminder
 ): Promise<{ message: string }> => {
   const task = await taskRepository.findTaskById(taskId, {
     populate: ["assignedUser", "category"],
@@ -278,10 +266,11 @@ export const testNotification = async (
     throw new ResourceNotFoundError("Task not found");
   }
 
-  await sendDiscordNotification(
+  notificationQueue.add({
     task,
-    task.assignedUser,
-    type as NotificationType
-  );
+    user: task.assignedUser,
+    type: type,
+  });
+
   return { message: `Test ${type} notification sent successfully` };
 };

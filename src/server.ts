@@ -4,6 +4,7 @@ import env from "./config/env";
 import { connectDB } from "./config/database";
 import { checkAndSendNotifications } from "./helpers/discord-notifications";
 import { initialize as initializeCron } from "./cron";
+import logger from "./utils/logger";
 
 const PORT = env.application.port;
 const server = http.createServer(app);
@@ -15,17 +16,17 @@ const startServer = async () => {
 
     // Initialize cron jobs after DB connection
     initializeCron();
-    console.log("✅ Cron jobs initialized");
+    logger.info("✅ Cron jobs initialized");
 
     server.listen(PORT, () => {
-      console.log(`🚀 Discord Task Manager API running on port ${PORT}`);
-      console.log(`📡 Environment: ${env.application.nodeEnv}`);
+      logger.info(`🚀 Discord Task Manager API running on port ${PORT}`);
+      logger.info(`📡 Environment: ${env.application.nodeEnv}`);
 
       // Run initial notification check
       checkAndSendNotifications();
     });
   } catch (err) {
-    console.error("💀 Fatal: Failed to start server due to DB error");
+    logger.error("💀 Fatal: Failed to start server due to DB error");
     process.exit(1);
   }
 };
@@ -36,10 +37,10 @@ server.on("error", (error: NodeJS.ErrnoException) => {
   const bind = typeof PORT === "string" ? `Pipe ${PORT}` : `Port ${PORT}`;
   switch (error.code) {
     case "EACCES":
-      console.error(`${bind} requires elevated privileges`);
+      logger.error(`${bind} requires elevated privileges`);
       process.exit(1);
     case "EADDRINUSE":
-      console.error(`${bind} is already in use`);
+      logger.error(`${bind} is already in use`);
       process.exit(1);
     default:
       throw error;
@@ -48,7 +49,7 @@ server.on("error", (error: NodeJS.ErrnoException) => {
 
 process.on("SIGTERM", () => {
   server.close(() => {
-    console.log("🔌 Server closed");
+    logger.info("🔌 Server closed");
     process.exit(0);
   });
 });
